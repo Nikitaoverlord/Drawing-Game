@@ -1,0 +1,16 @@
+
+
+MainWidget:
+
+<MainWidget>:
+
+    canvas.before:
+        Rectangle:
+            size: self.size
+            source: f"Background Images/background{str(root.background_image_number)}.jpg"
+
+    Image:
+        id: toolbar
+        source: "Tool Images/toolbar.png"
+        pos_hint: {"x":0, "y":-0.1}
+        size_hint: 0.45, 0.45
