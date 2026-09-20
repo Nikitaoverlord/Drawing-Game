@@ -1,54 +1,77 @@
-from kivy.uix.relativelayout import RelativeLayout
+# THIS IS user_actions.py FILE (NEW FILE)
+import math
 from kivy.graphics import Ellipse, Line
 from kivy.graphics.context_instructions import Color
+from kivy.uix.widget import Widget
+#import main
+
+sWidth = 1800 #675#1800
+sHeight = 800 #300#800
+
 
 def on_touch_down(self, touch):
-    self.cursor_location = touch.pos
-    with self.canvas:
-        if not self.erasor_on and self.cursor_type == "paintbrush":
-            Color(1, 0, 0)
-            #Ellipse(pos=(touch.x - self.radius / 2, touch.y - self.radius / 2), size=(self.radius, self.radius))
-            touch.ud['line'] = Line(points=(touch.x, touch.y), width=self.radius)
-        elif self.cursor_type != "paintbrush":
-            if self.cursor_type == "splash":
-                radius = 150
-                Color(1, 0, 0)
-                Ellipse(pos=(touch.x - radius / 2, touch.y - radius / 2), size=(radius, radius)) #the 10 is the radius
-                #Color(1, 0, 0)
-                Ellipse(pos=(touch.x - radius / 2, touch.y), size=(90, 90))
-                Ellipse(pos=(touch.x - radius/ 4, touch.y - radius / 4), size=(75, 75))
-                #Color(0, 1, 0)
-                Ellipse(pos=(touch.x, touch.y - radius / 1.8), size=(30, 30))
-                Ellipse(pos=(touch.x - radius / 8, touch.y + radius / 6), size=(60, 60))
-                #Color(0, 0, 1)
-                Ellipse(pos=(touch.x - radius / 1.75, touch.y), size=(30, 30))
-                Ellipse(pos=(touch.x + radius / 8, touch.y + radius / 8), size=(75, 75))
-                #Color(1, 1, 0)
-                #Ellipse(pos=(touch.x + radius / 4, touch.y - radius / 2), size=(25, 25))
-                Ellipse(pos=(touch.x + radius / 2.5, touch.y - radius/4), size=(35, 35))
-                #Color(0, 0, 0)
-                Ellipse(pos=(touch.x - radius / 4, touch.y - radius/1.80), size=(40, 40))
-
-            if self.cursor_type == "paintfall":
-                self.paint_fall_action(touch.x)
-            if self.cursor_type == "paintballoon":
-                self.create_balloon(touch.x, touch.y)
-        else:
-            Color(255, 255, 255, 1)
-            touch.ud['line'] = Line(points=(touch.x, touch.y), width=self.radius)
-
+    # if self.my_id % 2 == 0:
+    # if touch.x < sWidth and touch.x > (sWidth - self.app.button_size * len(self.cursor_types)):
+    # if touch.y < self.app.button_size and touch.y > 0:
+    # print("yo")
+    # return super(Widget, self).on_touch_down(touch)
+    # else:
+    # if touch.x < (self.app.button_size * len(self.cursor_types)) and touch.x > 0:
+    # if touch.y < self.app.button_size and touch.y > 0:
+    # print("yo")
+    # return super(RelativeLayout, self).on_touch_down(touch)
+    if self.win[0] == None:
+        if self.cursor_type == "paintbrush":
+            touch.ud['start_pos'] = (
+                touch.x, touch.y
+            ) # https://stackoverflow.com/questions/51841557/kivy-what-does-touch-ud-means
+        #touch.ud['line'] = Line(points=(touch.x, touch.y), width=self.paint_radius) # from
+        #https://kivy.org/doc/stable/tutorials/firstwidget.html
+        #self.lines.append([(touch.x, touch.y)]) # for server grade
+        self.request_pixel = (round(touch.y), round(touch.x))
 
 def on_touch_move(self, touch):
-    self.cursor_location = touch.pos
-    if not self.erasor_on and self.cursor_type == "paintbrush":
-        c = Color(1, 0, 0)
-        touch.ud['line'].points += touch.x, touch.y
-    elif self.cursor_type != "paintbrush":
-        pass
-    elif self.cursor_type != "paintfall":
-        pass
-    elif self.cursor_type != "paintballoon":
-        pass
-    else:
-        Color(255, 255, 255, 1)
-        touch.ud['line'].points += touch.x, touch.y
+    if self.win[0] == None:
+        if self.cursor_type == "paintbrush":
+            self.request_pixel = (round(touch.y), round(touch.x))
+            if (round(touch.y), round(touch.x)) == self.allowed_pixel:
+                if 'start_pos' in touch.ud:
+                    x_dist, y_dist = touch.x - touch.ud['start_pos'][0], touch.y - touch.ud['start_pos'][1]
+                    dist = math.sqrt(x_dist**2 + y_dist**2)
+                    angle = math.atan2(
+                    y_dist, x_dist
+                    ) # https://stackoverflow.com/questions/283406/what-is-the-difference-between-atanand-atan2-in-c
+
+                    x_step = math.cos(
+                    angle
+                    ) * self.paint_radius # if dist>self.paint_radius else math.cos(angle)
+                    y_step = math.sin(
+                    angle
+                    ) * self.paint_radius # if dist>self.paint_radius else math.sin(angle) # the*radius is for optimization
+
+                    for i in range(
+                        round(dist / self.paint_radius if dist > self.paint_radius else 1)):
+                        x_pos = round(touch.ud['start_pos'][0] + i * x_step -
+                            self.paint_radius) if x_dist != 0 else round(
+                            touch.ud['start_pos'][0]) - self.paint_radius
+                        y_pos = round(touch.ud['start_pos'][1] + i * y_step -
+                            self.paint_radius) if y_dist != 0 else round(
+                            touch.ud['start_pos'][1]) - self.paint_radius
+                        with self.canvas:
+                            r, g, b = self.color
+                            Color(r, g, b)
+                            Ellipse(pos=(x_pos, y_pos),
+                                size=(self.paint_radius * 2, self.paint_radius * 2))
+
+                            self.data[0].append([
+                                round(x_pos + self.paint_radius),
+                                round(y_pos + self.paint_radius), self.paint_radius
+                            ])
+
+                    touch.ud['start_pos'] = (
+                        touch.x, touch.y
+                    ) # new start point is at the end of the final ellipse
+
+                    #touch.ud['line'].points += [touch.x, touch.y]
+                    #self.lines[-1].append((touch.x, touch.y)) # for server code
+                    #print(self.lines)

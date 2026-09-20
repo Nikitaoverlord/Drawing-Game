@@ -1,293 +1,494 @@
+# THIS IS main.py FILE (NEW FILE)
+
+#!/usr/bin/env python
+import kivy, random, math
+from functools import partial
+
+import socket
+import _pickle as pickle
 
 from kivy.config import Config
-Config.set('graphics', 'width', '900')
-Config.set('graphics', 'height', '400')
+
+sWidth = 1800 #675#1800
+sHeight = 800 #300#800
+
+Config.set('graphics', 'width', str(sWidth))
+Config.set('graphics', 'height', str(sHeight))
+Config.set('graphics', 'resizable', False)
 
 from kivy.app import App
-from kivy.metrics import dp
-from kivy.properties import NumericProperty
-from kivy.uix.widget import Widget
-from kivy.graphics import Ellipse
-from kivy.uix.button import Button
-from kivy.uix.image import Image
-from kivy.graphics import Rectangle
-from kivy.graphics.context_instructions import Color
-from kivy.graphics.vertex_instructions import Line
-from kivy.graphics.vertex_instructions import Quad
-from kivy.graphics.vertex_instructions import Triangle
-from kivy.core.audio import SoundLoader
 from kivy.uix.relativelayout import RelativeLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.properties import StringProperty
-from kivy.properties import ObjectProperty
-from kivy.properties import BooleanProperty
-from kivy.lang.builder import Builder
+from kivy.uix.button import Button
+from kivy.uix.widget import Widget
 from kivy.core.window import Window
 from kivy.properties import Clock
-from kivy import platform
-import random
-import ast
+from kivy.graphics import Ellipse, Line, Rectangle
+from kivy.uix.image import Image
+from kivy.graphics.context_instructions import Color
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
+from kivy.uix.screenmanager import ScreenManager, Screen
 
-class MainWidget(RelativeLayout):
+# game format inspired from GALAXY KIVY PROJECT by Jonathan Roux
+# https://codewithjonathan.net/resourceskivy
+
+#help from kivy documentation and paintapp tutorial on kivy website
+#(https://kivy.org/doc/stable/tutorials/firstwidget.html)
+class MainWidget(FloatLayout):
+    #import user_actions #https://stackoverflow.com/questions/7336802/how-to-avoid-circularimports-in-python
     from user_actions import on_touch_down, on_touch_move
-
-    background_image_number = NumericProperty(2)
-
-
-    radius = 10
-
-    erasor_on = BooleanProperty(False)
-
-    tools = {"paintbrush": False, "splash": False, "paintfall": False, "paintballoon": True}
-
-
-    cursor_location = Window.mouse_pos
-
-    cursor_image_x = cursor_location[0]
-    cursor_image_y = cursor_location[1]
-
-    cursor_type = ""
-
-    cursor_dp_offset = 0.15
-
-
-    water_fall_on = False
-
-    water_fall_y = [0]
-    water_fall_x = [0]
-
-    water_fall_width = [100]
-    water_fall_height = [0]
-
-    water_falls = []
-
-
-    paint_balloon_on = False
-
-    paint_balloons = []
-
-    paint_balloon_x = []
-    paint_balloon_y = []
-
-    paint_balloon_init_y = []
-
-    paint_balloon_time = [] #formula -5t^2 + 15t + y
-
-    tool_bar_set = False
 
     def __init__(self, **kwargs):
         super(MainWidget, self).__init__(**kwargs)
 
-        self.cursor_image = Image()
-        self.add_widget(self.cursor_image)
+        self.app = app
+        self.my_id = my_id
 
-        Clock.schedule_interval(self.update, 1/120)
+        self.color = color
 
-    def create_tool_buttons(self, x, y, size):
-        self.button_list = []
-        for i in range(5):
-            self.button_list.append( Button(pos=(x+i*(size/5), y), size=(size/5, size/5), color=(1,1,1,1), text=f"Button {i+1}") )
+        self.weapons = {"paintbrush": 0, "paintballoon": 0, "paintfall": 0}
+        self.cursor_types = ["paintbrush", "paintballoon", "paintfall"]
 
-            self.add_widget(self.button_list[-1])
+        self.cursor_location = Window.mouse_pos
+        self.cursor_type = "paintbrush"
+
+        self.paint_radius = round(sWidth / 180) #5
+
+        #self.lines = [] # for server code
+        # self.cursor_image = Image()
+        # self.add_widget(self.cursor_image)
+        #
+        self.balloon_size = round(sWidth / 36)
+        self.balloon_init_y_speed = round(sHeight / 80)
+        if my_id % 2 == 0: self.balloon_init_x_speed = -round(sWidth / 180)
+        else: self.balloon_init_x_speed = round(sWidth / 180)
+        self.gravity = -1
+        self.balloons = []
+
+        self.balloon_offset_range = (round(sWidth / 50), round(sHeight / 53))
+        self.paintfall_width = round(sWidth / 72)
+        self.paintfall_speed = self.gravity * (sHeight / 160)
+        self.paintfall_swirl_factor = round(sWidth / 360)
+        if my_id % 2 == 0: self.paintfall_dir = -1
+        else: self.paintfall_dir = 1
+        self.paintfalls = []
+
+        self.win = [None, None]
+
+        self.data = [[], None, self.cursor_type]
+        self.allowed_pixel = None
+        self.request_pixel = None
+
+        self.missing_shapes = None
+
+        self.game_over_ran = False
+
+        self.initial_setup() ###IMPORTANT###
+
+        self.FPS = 120
+        Clock.schedule_interval(self.update, 1 / self.FPS)
+
+    def initial_setup(self):
+        size = round(sHeight / 2)
+        if my_id % 2 == 0:
+            r, g, b = self.color
+            with self.canvas.before:
+                Color(r, g, b)
+                Rectangle(pos=(sWidth - size / 2, sHeight / 2 - size / 2),
+                size=(size, size))
+
+        else:
+            r, g, b = self.color
+            with self.canvas.before:
+                Color(r, g, b)
+                Rectangle(pos=(0 - size / 2, sHeight / 2 - size / 2),
+                size=(size, size))
 
 
-    def create_balloon(self, touch_x, touch_y):
-        self.paint_balloon_on = True
+    def create_balloon(self, x, y):
+        size_x = self.balloon_size / sWidth
+        size_y = self.balloon_size / sHeight
+        self.balloons.append({
+            "obj":
+            Image(source="Tool Images/paintballoon.png",
+            pos=(x - (size_x * sWidth) / 2, y - (size_y * sHeight) / 2),
+            size_hint=(size_x, size_y)),
+            "sy":
+            self.balloon_init_y_speed,
+            "sx":
+            self.balloon_init_x_speed
+            })
+        
+    def create_balloon_splat(self, x, y):
+        random_x_offset = random.randint(-self.balloon_offset_range[0],
+            self.balloon_offset_range[0])
+        random_y_offset = random.randint(-self.balloon_offset_range[1],
+            self.balloon_offset_range[1])
 
-        self.paint_balloon_x.append(touch_x)
-        self.paint_balloon_y.append(touch_y)
+        with self.canvas:
+            r, g, b = self.color #https://note.nkmk.me/en/python-tuple-list-unpack/
+            Color(r, g, b)
+            x_pos = round(x + random_x_offset)
+            y_pos = round(y + random_y_offset)
+            Ellipse(pos=(x_pos, y_pos),
+                    size=(self.balloon_size * 2, self.balloon_size *
+                    2)) #ellipse x,y is bottom left and size is diameter
 
-        self.paint_balloon_init_y.append(touch_y)
-
-        self.paint_balloon_time.append(0)
-
-        self.paint_balloons.append(Image(source="Tool Images/paintballoon.png", size =((50*self.width/900), 50*(self.height/400))))
-        self.paint_balloons[-1].pos = (touch_x, touch_y)
-        self.paint_balloons[-1].size_hint = (dp(0.3), dp(0.3))
+            self.data[0].append([
+                round(x_pos + self.balloon_size),
+                round(y_pos + self.balloon_size), self.balloon_size
+            ])
 
     def update_balloons(self):
-
-        for balloon in self.paint_balloons: #formula -5t^2 + 15t + y
-            time = self.paint_balloon_time[self.paint_balloons.index(balloon)]
-
-            y = self.paint_balloon_y[self.paint_balloons.index(balloon)]
-            init_y = self.paint_balloon_init_y[self.paint_balloons.index(balloon)]
-
-            if (-4.9*time**2 + 30*time + init_y) < init_y: #formula finally less than 0
-                self.balloon_splat(self.paint_balloon_x[self.paint_balloons.index(balloon)], self.paint_balloon_y[self.paint_balloons.index(balloon)], self.paint_balloons[self.paint_balloons.index(balloon)].size[0])
-
-                self.paint_balloons[self.paint_balloons.index(balloon)].color = (0,0,0,0)#.remove_from_cache()
-
-                self.paint_balloons.pop(0)
-                self.paint_balloon_x.pop(0)
-                self.paint_balloon_y.pop(0)
-                self.paint_balloon_init_y.pop(0)
-                self.paint_balloon_time.pop(0)
-
+        for i, balloon in enumerate(self.balloons):
+            if balloon["sy"] == -self.balloon_init_y_speed: # meaning balloon has made a full jump and is ready to splat
+                self.create_balloon_splat(balloon["obj"].x, balloon["obj"].y)
+                self.balloons[i]["obj"].color = (0, 0, 0, 0)
+                self.balloons[i]["obj"].remove_from_cache()
+                self.balloons.remove(balloon)
             else:
-                self.paint_balloon_x[self.paint_balloons.index(balloon)] += 6
-                self.paint_balloon_y[self.paint_balloons.index(balloon)] = (-4.9*time**2 + 15*time + init_y)
+                self.balloons[i]["obj"].x += balloon["sx"]
+                self.balloons[i]["obj"].y += balloon["sy"]
+                self.balloons[i]["sy"] += self.gravity
 
-                self.paint_balloons[self.paint_balloons.index(balloon)].pos = (self.paint_balloon_x[self.paint_balloons.index(balloon)], self.paint_balloon_y[self.paint_balloons.index(balloon)])
-
-                self.paint_balloon_time[self.paint_balloons.index(balloon)] += 0.15
-
-    def balloon_splat(self, x, y, size):
-        radius = size
+    def create_paintfall(self, x, y):
+        r, g, b = self.color
         with self.canvas:
-            Color(1, 0, 0)
-            Ellipse(pos=(x, y), size=(radius, radius))
-            #Color(1, 0, 0)
-            Ellipse(pos=(x+radius/2, y), size=(30, 30))
-            Ellipse(pos=(x-radius/4, y+radius/4), size=(25, 25))
-            #Color(0, 1, 0)
-            Ellipse(pos=(x+radius/3, y+radius/1.16), size=(10, 10))
-            #Color(0, 0, 1)
-            Ellipse(pos=(x, y), size=(25, 25))
-            #Color(1, 1, 0)
-            Ellipse(pos=(x, y), size=(13, 13))
+            Color(r, g, b)
+            self.paintfalls.append([
+                Line(points=[x, y], width=self.paintfall_width), 1, self.paintfall_dir
+            ])
 
-    def paint_fall_action(self, touch_x):
-        self.water_fall_on = True
+        self.data[0].append([x, y, self.paintfall_width])
 
-        self.water_fall_y.append(self.height)
-        self.water_fall_height.append(0)
-        self.water_fall_width.append(100)
-
-        self.water_fall_x.append(touch_x-self.water_fall_width[0]/2)
-
-        #self.water_fall = Line(rectangle=(self.water_fall_x, self.water_fall_y, 0, 0))
-        with self.canvas:
-            Color(1, 0, 0, 1)
-            self.water_falls.append(Rectangle(pos = (self.water_fall_x[-1], self.water_fall_y[-1]), size = (0, 0)))
-
-    def update_waterfall(self):
-        #if you want to put an animation for the waterfall, you can do that here later
-        #print(self.water_falls)
-        for waterfall in self.water_falls:
-            if abs(self.water_fall_height[self.water_falls.index(waterfall)]) >= self.height:
-                self.water_falls.pop(0)
-                self.water_fall_x.pop(0)
-                self.water_fall_y.pop(0)
-                self.water_fall_width.pop(0)
-                self.water_fall_height.pop(0)
+    def update_paintfall(self):
+        for i, fall in enumerate(self.paintfalls):
+            last_x, last_y, swirl, dir = fall[0].points[-2], fall[0].points[-1], 
+            fall[1], fall[2]
+            if last_y <= 0:
+                self.paintfalls.remove(fall)
             else:
-                try:
-                    self.water_fall_height[self.water_falls.index(waterfall)] -= 3.5
-                    self.water_falls[self.water_falls.index(waterfall)].size = (self.water_fall_width[self.water_falls.index(waterfall)], self.water_fall_height[self.water_falls.index(waterfall)])
-                except:
-                    pass
-                # self.water_fall.points[0] = self.water_fall_x
-                # self.water_fall.points[1] = self.water_fall_y
-                #
-                # self.water_fall.points[2] = self.water_fall_width
-                # self.water_fall.points[3] = self.water_fall_height
+            # X Code
+                x = round(last_x + swirl) # swirl
+                if abs(swirl) >= self.paintfall_swirl_factor:
+                    self.paintfalls[i][2] *= -1
+                self.paintfalls[i][1] += self.paintfalls[i][2]
 
+                #Y Code
+                y = round(last_y + self.paintfall_speed)
+                self.paintfalls[i][0].points = self.paintfalls[i][0].points + [x, y]
+                self.data[0].append([x, y, self.paintfall_width, self.color])
 
-    def set_cursor(self, cursor_type):
+    def drawShapes(self):
+        x, y = self.allowed_pixel
+        with self.canvas:
+            if self.cursor_type == "paintbrush":
+                #if self.pixel_list[round(touch.y) - 1][round(touch.x) - 1] == self.color:
+                r, g, b = self.color
+                Color(r, g, b)
+                # don't divide the self.paint_radius by 2 to center because we need the radius by 2 to get a big enough circle
+                x_pos, y_pos = round(x - self.paint_radius), round(y - self.paint_radius)
 
-        if cursor_type != None:
-            Window.show_cursor = False
+                Ellipse(pos=(x_pos, y_pos),
+                    size=(self.paint_radius * 2, self.paint_radius * 2))
 
-            dict_tools = list(self.tools.items())
+                self.data[0].append([
+                    round(x_pos + self.paint_radius),
+                    round(y_pos + self.paint_radius), self.paint_radius, self.color
+                ])
 
-            if cursor_type == dict_tools[0][0]: self.file_directory = "Tool Images/paintbrush.png"
-            elif cursor_type == dict_tools[1][0]: self.file_directory = "Tool Images/splash.png"
-            elif cursor_type == dict_tools[2][0]: self.file_directory = "Tool Images/paintfall.png"
-            elif cursor_type == dict_tools[3][0]: self.file_directory = "Tool Images/paintballoon.png"
+            elif self.cursor_type == "paintballoon":
+                self.create_balloon(x, y)
 
+            elif self.cursor_type == "paintfall":
+                self.create_paintfall(x, y)
+
+    def addMisingShapes(self):
+        for shape in self.missing_shapes:
+            x, y, radius, color = shape[0],shape[1],shape[2],shape[3]
+            if len(shape) < 5:
+                with self.canvas:
+                    r, g, b = color
+                    Color(r, g, b)
+                    x_pos, y_pos = round(x - radius), round(y - radius)
+                    Ellipse(pos=(x_pos, y_pos), size=(radius * 2, radius * 2))
+            else:
+                with self.canvas:
+                r, g, b = color
+                Color(r, g, b)
+                x_pos, y_pos = round(x - radius), round(y - radius)
+                Rectangle(pos=(x_pos, y_pos), size=(radius * 2, radius * 2))
+
+    def game_over(self):
+        percentage = self.win[1] / (sWidth * sHeight) * 100 #self.win[1] is area
+        percentage = round(percentage, 2)
+        if self.win[0] == my_id:
+            display_text = "You Won!"
         else:
-            Window.show_cursor = True
-            self.file_directory = None
+            display_text = "You lost..."
 
-    def update_cursor(self, cursor_type):
+        app.screen_manager.current = "GameOver"
+        
+        app.game_over.label1.text = display_text
+        app.game_over.label2.text = f"Covered {percentage}% of screen!"
 
-        self.cursor_image_x = self.cursor_location[0]
-        self.cursor_image_y = self.cursor_location[1]
-
-        self.set_cursor(cursor_type)
-
-        self.cursor_image.source = self.file_directory
-
-        self.cursor_image.size_hint = (dp(self.cursor_dp_offset), dp(self.cursor_dp_offset))
-        self.cursor_image.pos = (self.cursor_image_x-(self.cursor_dp_offset*225), self.cursor_image_y)
-
-    def tool_assigner(self):
-        false_counter = 0
-
-        true_tool = ""
-        for tool in self.tools:
-            if self.tools[tool] == False:
-                false_counter += 1
-            else:
-                true_tool = tool
-
-        for tool in self.tools:
-            if tool != true_tool:
-                self.tools[tool] = False
-
-        if false_counter == 0:
-            self.tools["paintbrush"] = True
-
-    def bring_cursor_to_front(self):
-        self.remove_widget(self.cursor_image)
-        self.add_widget(self.cursor_image)
+    def clear_data(self):
+        self.data = [[], None, self.cursor_type]
 
     def update(self, dt):
-        time_factor=dt*120
-
-        self.bring_cursor_to_front()
-
-        self.tool_assigner()
-
-        if not self.tool_bar_set:
-            self.create_tool_buttons(self.ids.toolbar.pos[0], self.ids.toolbar.pos[1], self.ids.toolbar.size[0])
-            self.tool_bar_set = True
-
-        self.cursor_type = ""
-        for tool in self.tools:
-            if self.tools[tool] == True:
-                self.cursor_type = tool
-
-        self.update_cursor(self.cursor_type)
-
-        over_height_waterfalls = 0
-
-        if self.water_fall_on:
-            for height in self.water_fall_height:
-                if abs(height) > self.height:
-                    over_height_waterfalls += 1
-
-        #print(len(self.water_falls), over_height_waterfalls)
-        if over_height_waterfalls == len(self.water_falls):
-            self.water_fall_on = False
-        else:
-            self.update_waterfall()
-            #print(len(self.water_falls), over_height_waterfalls)
-
-        balloon_back = 0
-
-        if self.paint_balloon_on:
-            for balloon in self.paint_balloons:
-                time = self.paint_balloon_time[self.paint_balloons.index(balloon)]
-                y = self.paint_balloon_y[self.paint_balloons.index(balloon)]
-                init_y = self.paint_balloon_init_y[self.paint_balloons.index(balloon)]
-
-                if (-4.9*time**2 + 15*time + init_y) < init_y:
-                    balloon_back += 1
-
-        #print(len(self.water_falls), over_height_waterfalls)
-        if balloon_back == len(self.paint_balloons):
-            self.paint_balloon_on = False
-        else:
+        time_factor = dt * self.FPS
+        
+        if self.win[0] == None:
             self.update_balloons()
-            #print(len(self.water_falls), over_height_waterfalls)
+            self.update_paintfall()
+
+            self.data[1] = self.request_pixel
+            self.data[2] = self.cursor_type
+
+            data = pickle.dumps((self.data[0], self.data[1], self.data[2]))
+            client_socket.send(data)
+
+            self.clear_data()
+
+            recv_data = client_socket.recv(2048 * 4)
+            reply = pickle.loads(recv_data)
+            self.allowed_pixel, self.missing_shapes, self.win, self.weapons, self.timer = reply[
+                0], reply[1], reply[2], reply[3], reply[4]
+
+            for i, weapon in enumerate(self.weapons):
+                app.button_label_list[i].text = str(self.weapons[weapon])
+
+            app.update_timer(self.timer)
+            if self.allowed_pixel != None:
+                self.drawShapes()
+
+            if self.missing_shapes != None:
+                self.addMisingShapes()
+
+            self.allowed_pixel = None
+            self.request_pixel = None
+
+        else:
+            if not self.game_over_ran:
+                self.game_over()
+                self.game_over_ran = True
+        #f"{area} pixels: {area/(sWidth*sHeight) * 100}% of screen"
 
 
+class MainMenu(GridLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.cols = 1
+
+        self.fields_layout = GridLayout(cols=2)
+
+        self.ip_label = Label(text="SERVER IP: ")
+
+        self.ip_text_input = TextInput(hint_text="127.0.0.1",
+            multiline=False,
+            text="127.0.0.1")
+
+        self.color_label = Label(text="RGB Color: ")
+        self.color_input = TextInput(hint_text="0,0,255",
+            multiline=False,
+            text="1,0,0")
+
+        self.fields_layout.add_widget(self.ip_label)
+        self.fields_layout.add_widget(self.ip_text_input)
+        self.fields_layout.add_widget(self.color_label)
+        self.fields_layout.add_widget(self.color_input)
+
+        self.join_button = Button(text="Join Game!")
+        self.join_button.bind(on_release=self.temporary_func)
+
+        self.add_widget(self.fields_layout)
+        self.add_widget(self.join_button)
+
+    def temporary_func(self, obj):
+        app.screen_manager.current = "Loading"
+        Clock.schedule_once(self.connect_to_server, 1)
+
+    def connect_to_server(self, obj):
+        global my_id, client_socket, PORT, color
+        self.server_ip = self.ip_text_input.text
+        self.color_string = self.color_input.text
+
+        # NETWORK/SOCKET PART
+        PORT = 12345
+
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((self.server_ip, PORT))
+
+        name = "Lol"
+
+        color_list = self.color_string.split(",")
+        color = int(color_list[0]), int(color_list[1]), int(color_list[2])
+
+        data = name + " " + self.color_string
+        client_socket.send(data.encode())
+
+        recv_data = client_socket.recv(1024)
+        my_id = int(recv_data.decode())
+        print(my_id)
+
+        app.create_main_page()
+        app.screen_manager.current = "MainWidget"
+
+
+class LoadingPage(GridLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.cols = 1
+
+        self.dots = 0
+        self.label = Label(text="Waiting for a 2nd player to join")
+
+        self.add_widget(self.label)
+
+        self.FPS = 3
+        Clock.schedule_interval(self.update, 1 / self.FPS)
+
+        def update(self, dt):
+            if self.dots < 3:
+                self.label.text = self.label.text + "."
+                self.dots += 1
+            else:
+                self.label.text = "Waiting for a 2nd player to join"
+                self.dots = 0
+
+
+class GameOverPage(GridLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.cols = 1
+
+        self.label1 = Label(text="")
+        self.label2 = Label(text="")
+
+        self.button = Button(text="Menu")
+        self.button.bind(on_release=self.go_to_menu)
+
+        self.add_widget(self.label1)
+        self.add_widget(self.label2)
+        self.add_widget(self.button)
+
+        def go_to_menu(self, obj):
+            app.clear_canvas()
+            app.screen_manager.current = "Menu"
 
 class PaintBattleApp(App):
-    pass
+    def build(self):
+        self.screen_manager = ScreenManager()
 
+        self.menu = MainMenu()
+        self.menu_screen = Screen(name="Menu")
+        self.menu_screen.add_widget(self.menu)
+        self.screen_manager.add_widget(self.menu_screen)
 
+        self.loading = LoadingPage()
+        self.loading_screen = Screen(name="Loading")
+        self.loading_screen.add_widget(self.loading)
+        self.screen_manager.add_widget(self.loading_screen)
 
+        self.game_over = GameOverPage()
+        self.game_over_screen = Screen(name="GameOver")
+        self.game_over_screen.add_widget(self.game_over)
+        self.screen_manager.add_widget(self.game_over_screen)
 
-PaintBattleApp().run()
+        return self.screen_manager
+
+    def create_main_page(self):
+        self.main_widget = MainWidget()
+
+        self.button_layout = FloatLayout(size=(
+            sWidth,
+            sHeight)) # https://kivy.org/doc/stable/api-kivy.uix.floatlayout.html
+
+        self.button_size = sWidth / 18
+        self.create_tool_buttons(
+            len(self.main_widget.cursor_types),
+            self.button_size) # create a button for each tool in cursor_types list
+
+        size_x, size_y = round(sWidth / 5), round(sHeight / 8)
+        self.timer_label = Label(size_hint=(size_x / sWidth, size_y / sHeight),
+            pos=(sWidth / 2, sHeight - size_y),
+            text="0:00",
+            text_size=(size_x, size_y),
+            color=(1, 1, 1))
+
+        self.button_layout.add_widget(self.timer_label)
+
+        self.main_screen = Screen(name="MainWidget")
+        self.main_screen.add_widget(self.main_widget)
+        self.main_screen.add_widget(self.button_layout)
+        self.screen_manager.add_widget(self.main_screen)
+
+    def create_tool_buttons(self, button_num, size):
+        self.button_list = []
+        self.button_label_list = []
+        if my_id % 2 == 0:
+            start_x = sWidth - size
+            dir = -1
+        else:
+            start_x = 0
+            dir = 1
+
+        for i in range(button_num):
+            self.button_list.append(
+                Button(
+                    size_hint=(size / sWidth, size / sHeight),
+                    pos=(start_x + (dir * i * size), 0),
+                    background_normal=
+                    f"Tool Images/{self.main_widget.cursor_types[i]}.png",
+                    #https://www.geeksforgeeks.org/use-image-as-a-button-in-kivy/
+                    border=(
+                        0, 0,
+                        0, 0
+                    ), # to fix distortion: https://stackoverflow.com/questions/34727938/imagedistorted-when-widget-size-differs-from-dimensions-of-stored-image
+                    #background_down = 'down.png', #do later
+                ))
+            
+            callback = partial(
+                self.button_functionality, self.main_widget.cursor_types[i]
+            ) # got help from stack overflow with this
+        #link:https://stackoverflow.com/questions/33586688/kivy-button-binding-function-with-argument
+            self.button_list[-1].bind(on_release=callback)
+
+            self.button_label_list.append(
+                Label(size_hint=(size / sWidth, (size / sHeight)),
+                    pos=(start_x + (dir * i * size), size * (2 / 3)),
+                    text=str(
+                        self.main_widget.weapons[self.main_widget.cursor_types[i]])))
+
+            self.button_layout.add_widget(self.button_list[-1])
+            self.button_layout.add_widget(self.button_label_list[-1])
+
+    def button_functionality(self, *args): # **args maybe
+        self.main_widget.cursor_type = args[0]
+        print(self.main_widget.cursor_type)
+
+    def update_timer(self, time):
+        minutes = int(time / 60)
+        seconds = int(time - minutes * 60)
+        if seconds < 10:
+            seconds = f"0{seconds}"
+
+        text = f"{minutes}:{seconds}"
+
+        self.timer_label.text = text
+
+    def clear_canvas(self):
+        self.main_widget.canvas.clear()
+
+my_id = None
+client_socket = None
+
+app = PaintBattleApp()
+app.run()
+#client_socket.close()
