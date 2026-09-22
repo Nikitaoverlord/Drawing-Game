@@ -2,8 +2,7 @@
 
 A cross-device multiplayer mobile battle game using the Pygame Kivy library and sockets. 
 Originially made for my APCSP Portfolio project along with a writeup.
-U
-ing the Kivy library in Python to handle the GUI, and the python socket library to create different sockets to manage users from across platforms that are on the same wifi network. Started out as a project for the APCSP exam, then turned into a nearly finished personal project but with some remaining bugs. The game functions as 2 players try to "battle" to conver the entire canvas in their assigned paint color. You can draw, throw paint balloons, erase, and other features during the battel for domination.
+Using the Kivy library in Python to handle the GUI and allow mobile device access, and the python socket library to create different sockets to manage users from across platforms that are on the same wifi network. Started out as a project for the APCSP exam, then turned into a nearly finished personal project but with some remaining bugs. The game functions as 2 players try to "battle" to conver the entire canvas in their assigned paint color. You can draw, throw paint balloons, erase, and other features during the battel for domination.
 <img width="2313" height="1056" alt="gameStart" src="https://github.com/user-attachments/assets/bd4ad224-3db6-4790-a552-8509c1aa1ab4" />
 
 ## Demo
